@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import requests
-import pandas as pd # Import pandas for DataFrame operations
+import pandas as pd  # Import pandas for DataFrame operations
 from snowflake.connector.pandas_tools import write_pandas
 
 from airflow.sdk import dag, task
@@ -18,16 +18,19 @@ from utils import get_snowflake_connection
 # -------------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------------
-ON_OFF_SNOWFLAKE_LOAD_ENABLED = False  # Set to True to enable Snowflake loading
-SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE", "SNOWBEARAIR_DB") # Default to SNOWBEARAIR_DB
-SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA", "RAW") # Default to RAW
-SNOWFLAKE_TABLE = "BORED_API_ACTIVITIES" # Table name for Bored API data
+ON_OFF_SNOWFLAKE_LOAD_ENABLED = True  # Set to True to enable Snowflake loading
+SNOWFLAKE_DATABASE = os.getenv(
+    "SNOWFLAKE_DATABASE", "SNOWBEARAIR_DB"
+)  # Default to SNOWBEARAIR_DB
+SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA", "RAW")  # Default to RAW
+SNOWFLAKE_TABLE = "STARTER_DAG_MECHAM_M"  # Table name for Bored API data
+
 
 @dag(
     dag_id="starter_dag",
-    start_date=datetime(2026, 1, 6, tzinfo=timezone.utc), # Ensure timezone-aware
+    start_date=datetime(2026, 1, 6, tzinfo=timezone.utc),  # Ensure timezone-aware
     schedule="@daily",
-    catchup=True, # Set to True to backfill historical data if needed
+    catchup=True,  # Set to True to backfill historical data if needed
     tags=["starter", "example", "elt", "snowflake"],
 )
 def starter_dag_elt():
@@ -62,14 +65,16 @@ def starter_dag_elt():
         # (defined in docker-compose.yaml as /opt/airflow/staging)
         staging_dir = "/opt/airflow/staging/activities"
         os.makedirs(staging_dir, exist_ok=True)
-        
+
         # Use a timestamp in the filename to ensure uniqueness for each run
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        file_path = os.path.join(staging_dir, f"activity_{activity_data.get('key', timestamp)}.json")
-        
+        file_path = os.path.join(
+            staging_dir, f"activity_{activity_data.get('key', timestamp)}.json"
+        )
+
         with open(file_path, "w") as f:
             json.dump(activity_data, f)
-            
+
         logging.info(f"Raw activity data saved to: {file_path}")
         return file_path
 
@@ -103,16 +108,18 @@ def starter_dag_elt():
             "PRICE": data.get("price"),
             "LINK": data.get("link"),
             "ACCESSIBILITY": accessibility_value,
-            "UNIQUE_KEY": data.get("key"), # Bored API provides a unique key per activity
-            "FETCH_DATE": datetime.now().isoformat() # Add a fetch timestamp
+            "UNIQUE_KEY": data.get(
+                "key"
+            ),  # Bored API provides a unique key per activity
+            "FETCH_DATE": datetime.now().isoformat(),  # Add a fetch timestamp
         }
-        
+
         # Convert to pandas DataFrame for easy loading to Snowflake
         df = pd.DataFrame([transformed_record])
-        
+
         logging.info("Transformed activity data (first 5 rows):")
         logging.info(df.head().to_string())
-        
+
         return df
 
     @task
@@ -128,12 +135,14 @@ def starter_dag_elt():
             logging.info("No data to load into Snowflake. Skipping.")
             return
 
-        logging.info(f"Attempting to load {len(df)} rows to Snowflake table: {SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.{SNOWFLAKE_TABLE}")
+        logging.info(
+            f"Attempting to load {len(df)} rows to Snowflake table: {SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.{SNOWFLAKE_TABLE}"
+        )
 
         # Establish Snowflake connection using credentials from .env
         # Ensure SNOWFLAKE_USER, SNOWFLAKE_PASSWORD/KEY, SNOWFLAKE_ACCOUNT are set in your .env
         conn = get_snowflake_connection(schema=SNOWFLAKE_SCHEMA)
-        
+
         try:
             # Create table if it doesn't exist (DML based on DataFrame columns)
             # This is a basic example; for production, use DDL in version control.
@@ -158,29 +167,31 @@ def starter_dag_elt():
                 table_name=SNOWFLAKE_TABLE,
                 database=SNOWFLAKE_DATABASE,
                 schema=SNOWFLAKE_SCHEMA,
-                auto_create_table=False, # Set to True if you want Pandas to auto-create (not recommended for prod)
-                overwrite=False,         # Set to True for full refresh each run, False to append
-                quote_identifiers=False  # Set to True if your column names have spaces/special chars
+                auto_create_table=False,  # Set to True if you want Pandas to auto-create (not recommended for prod)
+                overwrite=False,  # Set to True for full refresh each run, False to append
+                quote_identifiers=False,  # Set to True if your column names have spaces/special chars
             )
-            
+
             if success:
-                logging.info(f"✅ Successfully loaded {nrows} rows to Snowflake table {SNOWFLAKE_TABLE}.")
+                logging.info(
+                    f"✅ Successfully loaded {nrows} rows to Snowflake table {SNOWFLAKE_TABLE}."
+                )
             else:
                 logging.error(f"❌ Failed to load data to Snowflake.")
 
         except Exception as e:
             logging.error(f"❌ Error loading data to Snowflake: {e}")
-            raise # Re-raise the exception to fail the Airflow task
+            raise  # Re-raise the exception to fail the Airflow task
         finally:
             conn.close()
             logging.info("Snowflake connection closed.")
-
 
     # Define the ELT flow
     raw_activity_data = extract_activity()
     staged_activity_file = load_raw_activity(raw_activity_data)
     transformed_activity_df = transform_data(staged_activity_file)
     load_transformed_data_to_snowflake(transformed_activity_df)
+
 
 # Instantiate DAG
 starter_dag_elt()
