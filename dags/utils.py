@@ -19,6 +19,7 @@ import paramiko
 # -------------------------------------------------------------------
 load_dotenv()
 
+
 # -------------------------------------------------------------------
 # S&P 500 Tickers
 # -------------------------------------------------------------------
@@ -29,9 +30,7 @@ def get_sp500_tickers() -> list[str]:
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     # Add a User-Agent so Wikipedia doesn't block the request
     dfs = pd.read_html(
-        url,
-        match="Symbol",
-        storage_options={"User-Agent": "Mozilla/5.0"}
+        url, match="Symbol", storage_options={"User-Agent": "Mozilla/5.0"}
     )
     df = dfs[0]
 
@@ -46,6 +45,7 @@ def get_sp500_tickers() -> list[str]:
         .tolist()
     )
     return tickers
+
 
 # -------------------------------------------------------------------
 # Snowflake_keypair
@@ -69,7 +69,7 @@ def get_snowflake_connection(schema: str = None):
     )
 
     key_path = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH")
-    key_b64  = os.getenv("SNOWFLAKE_PRIVATE_KEY_B64")
+    key_b64 = os.getenv("SNOWFLAKE_PRIVATE_KEY_B64")
     key_pass = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
 
     if not key_path and not key_b64:
@@ -95,6 +95,7 @@ def get_snowflake_connection(schema: str = None):
 
     return snowflake.connector.connect(private_key=private_key, **common)
 
+
 # -------------------------------------------------------------------
 # MongoDB
 # -------------------------------------------------------------------
@@ -105,6 +106,7 @@ def get_mongo_client(local_port=None):
     - If connecting directly, env vars are used.
     """
     from urllib.parse import quote_plus
+
     host = "127.0.0.1" if local_port else os.getenv("MONGO_HOST")
     port = local_port or int(os.getenv("MONGO_PORT", 27017))
     user = os.getenv("MONGO_USER")
@@ -113,6 +115,7 @@ def get_mongo_client(local_port=None):
 
     uri = f"mongodb://{user}:{password}@{host}:{port}/{auth_db}"
     return pymongo.MongoClient(uri)
+
 
 def get_mongo_collection(client):
     """
@@ -141,31 +144,45 @@ def create_ssh_tunnel():
         ssh_username=SSH_USER,
         ssh_password=SSH_PASSWORD,
         remote_bind_address=(MONGO_HOST, MONGO_PORT),
-        local_bind_address=("127.0.0.1", 27017)
+        local_bind_address=("127.0.0.1", 27017),
     )
     tunnel.start()
     logging.info(f"SSH tunnel established on local port {tunnel.local_bind_port}")
     return tunnel
 
+
 # ---------------------------------------------------------
 # Weather Record Builder
 # ---------------------------------------------------------
 
-def build_weather_record(weather_dict, target_date, city):
+
+def build_weather_record(weather_dict, target_date, city, tz):
     """Extract weather metrics safely from API response."""
     daily_data = weather_dict.get("daily", {})
     return {
         "date": target_date,
         "city": city,
+        "timezone": tz,
+        "weather_code": daily_data.get("weathercode", [None])[0],
         "max_temp": daily_data.get("temperature_2m_max", [None])[0],
         "min_temp": daily_data.get("temperature_2m_min", [None])[0],
+        "apparent_temp_max": daily_data.get("apparent_temperature_max", [None])[0],
+        "apparent_temp_min": daily_data.get("apparent_temperature_min", [None])[0],
+        "sunrise": daily_data.get("sunrise", [None])[0],
+        "sunset": daily_data.get("sunset", [None])[0],
+        "uv_index": daily_data.get("uv_index_max", [None])[0],
+        "uv_index_clear_sky": daily_data.get("uv_index_clear_sky_max", [None])[0],
+        "shortwave_radiation": daily_data.get("shortwave_radiation_sum", [None])[0],
         "precip": daily_data.get("precipitation_sum", [None])[0],
+        "snowfall": daily_data.get("snowfall_sum", [None])[0],
         "max_wind": daily_data.get("windspeed_10m_max", [None])[0],
     }
+
 
 # ---------------------------------------------------------
 # Snowflake MERGE SQL Builder
 # ---------------------------------------------------------
+
 
 def build_merge_sql(rec, table):
     """Return a parameterized Snowflake MERGE statement."""
@@ -174,10 +191,10 @@ def build_merge_sql(rec, table):
         USING (SELECT
             '{rec["date"]}' AS DATE,
             '{rec["city"]}' AS CITY,
-            {rec["max_temp"] if rec["max_temp"] is not None else 'NULL'} AS MAX_TEMP,
-            {rec["min_temp"] if rec["min_temp"] is not None else 'NULL'} AS MIN_TEMP,
-            {rec["max_wind"] if rec["max_wind"] is not None else 'NULL'} AS MAX_WIND,
-            {rec["precip"] if rec["precip"] is not None else 'NULL'} AS PRECIP
+            {rec["max_temp"] if rec["max_temp"] is not None else "NULL"} AS MAX_TEMP,
+            {rec["min_temp"] if rec["min_temp"] is not None else "NULL"} AS MIN_TEMP,
+            {rec["max_wind"] if rec["max_wind"] is not None else "NULL"} AS MAX_WIND,
+            {rec["precip"] if rec["precip"] is not None else "NULL"} AS PRECIP
         ) s
         ON t.DATE = s.DATE AND t.CITY = s.CITY
         WHEN MATCHED THEN UPDATE SET
@@ -191,9 +208,11 @@ def build_merge_sql(rec, table):
             (s.DATE, s.CITY, s.MAX_TEMP, s.MIN_TEMP, s.MAX_WIND, s.PRECIP);
     """
 
+
 # ---------------------------------------------------------------
 # SFTP Helper Utilities for Airflow DAGs
 # ---------------------------------------------------------------
+
 
 def create_sftp_connection():
     """
@@ -215,12 +234,14 @@ def create_sftp_connection():
         logging.error(f"❌ Failed to connect to SFTP: {e}")
         raise
 
+
 def is_directory(sftp, path):
     """Check if a given SFTP path is a directory."""
     try:
         return stat.S_ISDIR(sftp.stat(path).st_mode)
     except IOError:
         return False
+
 
 def list_folders(sftp):
     """Return list of top-level folders on SFTP."""
@@ -232,6 +253,7 @@ def list_folders(sftp):
         logging.error(f"Error listing folders: {e}")
         return []
 
+
 def list_files(sftp, folder):
     """Return list of files within a given folder."""
     try:
@@ -242,6 +264,7 @@ def list_files(sftp, folder):
     except Exception as e:
         logging.error(f"Error listing files in {folder}: {e}")
         return []
+
 
 def read_file_from_sftp(sftp, folder, filename):
     """Read a file from SFTP and return its content as text."""
