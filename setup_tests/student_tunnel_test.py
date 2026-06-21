@@ -1,11 +1,11 @@
-#%% start_mongo_tunnel.py
+# %% start_mongo_tunnel.py
 import os
 from dotenv import load_dotenv
 from sshtunnel import SSHTunnelForwarder
 import time
 from pathlib import Path
 
-load_dotenv(Path(__file__).parent / 'student.env')
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # SSH credentials
 SSH_HOST = os.getenv("SSH_HOST")
@@ -22,7 +22,7 @@ tunnel = SSHTunnelForwarder(
     ssh_username=SSH_USER,
     ssh_password=SSH_PASSWORD,
     remote_bind_address=(MONGO_HOST, MONGO_PORT),
-    local_bind_address=('127.0.0.1', 27017)
+    local_bind_address=("127.0.0.1", 27017),
 )
 
 tunnel.start()
